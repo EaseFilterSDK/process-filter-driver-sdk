@@ -1,20 +1,125 @@
-# [Process Monitoring and Protection SDK](https://www.easefilter.com/Forums_Files/Process-Monitor.htm)
- 
-The Process Filter Driver is a kernel-mode driver that filters process/thread creation and termination, it provides you an easy way to develop Windows application for the Windows process monitoring and protection. 
+# EaseFilter Process Filter Driver SDK
 
-## Monitor the process or thread activities in real time
-You can register the process or thread events to monitor the process or thread activities.
+[![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)]()
+[![Language](https://img.shields.io/badge/Language-C%23%20%7C%20C++%20%7C%20Python%20%7C%20Rust%20%7C%20Java-success.svg)]()
+[![License](https://img.shields.io/badge/License-Commercial-orange.svg)]()
 
--  **OnProcessCreation**: Get the notification when the new process was created.
--  **NotifyProcessWasBlocked**: Get the notification when the process creation was blocked.
--  **NotifyProcessTerminated**: Get the notification when the process was terminated.
--  **NotifyThreadCreation**: Get the notification when the new thread was created.
--  **NotifyThreadTerminated**: Get the notification when the thread was terminated.
--  **NotifyProcessHandleInfo**: Get the notification when the process handle operation happens.
--  **NotifyThreadHandleInfo**: Get the notification when the thread handle operation happens.
+## 🛡️ Overview
 
-## Prevent the untrusted processes from being launched
-With the Process Filter Driver, it allows you to prevent the untrusted executable binaries (malwares) from being launched, protect your data being damaged by the untrusted processes. It also enables your application to get the callback notification for the process/thread creation or termination, from the new process information you can get the parent process Id and thread Id of the new created process, you also can get the exact file name that is used to open the executable file and the command line that is used to execute the process if it is available.
+The **EaseFilter Process Filter Driver SDK** is a robust kernel-mode development kit designed for Windows process monitoring and protection. Operating deep within the Windows executive layer, it intercepts process and thread operations—such as creation, termination, and handle requests—before they reach their intended target.
+
+This SDK empowers developers to build enterprise-grade security, auditing, and continuous monitoring applications. It is ideal for system administrators and security engineers who need to block malware, audit application usage, and sandbox untrusted executables in real-time.
+
+---
+
+## 🏗️ Architecture
+
+The EaseFilter ecosystem relies on a highly efficient client-server architecture bridging kernel space and user space:
+
+1. **Kernel-Mode Component (`EaseFlt.sys`)**: The core filter driver residing in the Windows kernel. It intercepts system calls related to processes and threads via native Windows kernel callbacks (e.g., `PsSetCreateProcessNotifyRoutineEx`).
+2. **User-Mode Wrapper (`FilterAPI.dll`)**: A dynamic link library handling high-speed communication between your user-mode application and the kernel driver.
+3. **Managed Control Layer (`EaseFilter.FilterControl`)**: A .NET wrapper available via NuGet, allowing seamless integration for C#, F#, and VB.NET applications.
+
+![EaseFilter Process SDK Architecture](https://www.easefilter.com/images/process-filter-driver-architecture.jpg)
+
+---
+
+## ✨ Core Capabilities
+
+* **Process and Thread Monitoring**: Real-time callback notifications for process creation (capturing PID, executable path, command-line arguments), termination, and thread tracking.
+* **Active Protection and Blocking**: Definitively allow or deny execution at the kernel level. Prevent untrusted binaries from running before the OS allocates memory.
+* **Process-Based File Access Control**: Integrate with the File System Filter Driver to sandbox applications (e.g., grant `notepad.exe` read-only access to system folders, or block specific processes from extracting data).
+* **Dynamic Process Evaluation**: Inspect process events programmatically and block them dynamically in real-time by modifying the event's `ReturnStatus`.
+
+---
+
+## 🚀 Getting Started
+
+### 1. Basic Initialization & Monitoring (C#)
+
+Define a rule, configure control flags, and start monitoring specific directories.
+
+```csharp
+using System;
+using EaseFilter.FilterControl;
+
+namespace ProcessMonitorApp {
+    class Program {
+        static FilterControl filterControl = new FilterControl();
+
+        static void Main(string[] args) {
+            string lastError = string.Empty;
+            string licenseKey = "Email us to request a trial key: info@easefilter.com";
+            
+            FilterAPI.FilterType filterType = FilterAPI.FilterType.PROCESS_FILTER;
+            
+            try {
+                // Setup the filter rule targeting an untrusted folder
+                ProcessFilterRule rule = new ProcessFilterRule();
+                rule.ProcessNameFilterMask = "c:\\untrusted_folder\\*";
+                
+                // Set flags: Block execution AND request notifications
+                rule.ControlFlag = FilterAPI.ProcessControlFlag.DENY_NEW_PROCESS_CREATION | 
+                                   FilterAPI.ProcessControlFlag.PROCESS_CREATION_NOTIFICATION;
+                
+                filterControl.OnProcessCreation += FilterControl_OnProcessCreation;
+                filterControl.AddProcessFilterRule(rule);
+                
+                if (!filterControl.StartFilter(filterType, 5, 10, licenseKey, ref lastError)) {
+                    Console.WriteLine("Failed to start filter: " + lastError);
+                    return;
+                }
+                
+                Console.WriteLine("Driver started successfully. Press any key to exit.");
+                Console.ReadKey();
+            } finally {
+                filterControl.StopFilter();
+            }
+        }
+
+        private static void FilterControl_OnProcessCreation(object sender, ProcessEventArgs e) {
+            Console.WriteLine($"[BLOCKED] Attempted launch: {e.ImageFileName} by PID {e.ParentProcessId}");
+        }
+    }
+}
+```
+
+---
+
+## 💡 Common Use Cases
+
+### Application Sandboxing (Preventing Child Processes)
+Vulnerable applications like Office or PDF readers are often exploited to launch malicious scripts. Sandbox them to prevent child process creation.
+
+```csharp
+ProcessFilterRule sandboxRule = new ProcessFilterRule();
+sandboxRule.ProcessNameFilterMask = "*WINWORD.EXE";
+
+// Deny child processes and enable logging
+sandboxRule.ControlFlag = FilterAPI.ProcessControlFlag.DENY_CHILD_PROCESS_CREATION | 
+                          FilterAPI.ProcessControlFlag.PROCESS_CREATION_NOTIFICATION;
+
+filterControl.AddProcessFilterRule(sandboxRule);
+filterControl.OnProcessCreation += (sender, e) => {
+    Console.WriteLine($"[SANDBOX BLOCK] PID {e.ParentProcessId} attempted to launch {e.ImageFileName}");
+};
+```
+
+### Endpoint Agent Protection (Anti-Kill)
+Protect your own security software or critical services from being terminated by malware or unauthorized users.
+
+```csharp
+ProcessFilterRule protectionRule = new ProcessFilterRule();
+protectionRule.ProcessNameFilterMask = "*MySecureAgent.exe";
+
+// Request a synchronous callback BEFORE the process is terminated
+protectionRule.ControlFlag = FilterAPI.ProcessControlFlag.PROCESS_PRE_TERMINATION_REQUEST;
+
+filterControl.AddProcessFilterRule(protectionRule);
+// You can then handle the pre-termination event to deny the request
+```
+
+---
 
 ## A C# process monitoring and protection example.
 With the process monitoring and protection example, it enables your application to prevent the untrusted executable binaries ( malwares) from being launched, protect your data being damaged by the untrusted processes. It also enables your application to get the callback notification for the process/thread creation or termination, from the new process information you can get the parent process Id and thread Id of the new created process, you also can get the exact file name that is used to open the executable file and the command line that is used to execute the process if it is available.
@@ -63,6 +168,17 @@ With the process monitoring and protection example, it enables your application 
 * [Filter Driver Developer Guide](https://www.easefilter.com/kb/DeveloperGuide.htm)
 * [MiniFilter Filter Driver Framework](https://www.easefilter.com/kb/minifilter-framework.htm)
 * [Isolation Filter Driver](https://www.easefilter.com/kb/Isolation_Filter_Driver.htm)
+
+## License
+
+This repository contains two distinct licensing categories:
+
+1. **Wrapper/Implementation Code (MIT License):** 
+   The source code, scripts, and configuration files provided directly in this repository are licensed under the [MIT License](LICENSE). You are free to modify, distribute, and use this specific integration code.
+
+2. **EaseFilter SDK (Commercial License):**
+   This project requires the EaseFilter SDK (including its binaries, filter drivers, and core libraries) to function. The EaseFilter SDK is **proprietary commercial software** and is strictly excluded from the MIT License.   
+   To use the EaseFilter SDK for commercial purposes or in a production environment, you must obtain a valid commercial license directly from [EaseFilter](https://www.easefilter.com/license.pdf).
 
 ## Support
 If you have questions or need help, please contact support@easefilter.com 
